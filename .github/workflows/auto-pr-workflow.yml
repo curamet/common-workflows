@@ -1,0 +1,59 @@
+name: Workflow for Automatic creation of PullRequest
+
+on:
+  workflow_call:
+    inputs:
+      pr_branch:
+        required: true
+        type: string
+      review_team:
+        required: false
+        type: string
+        default: 'developers'
+    secrets:
+      git_token:
+        required: true
+
+jobs:
+  auto-pull-request:
+    name: Create or update pull request
+    runs-on: ubuntu-latest
+    outputs:
+      pull_request_number: ${{ steps.create-update-pr.outputs.pull_request_number }}
+      pull_request_url: ${{ steps.create-update-pr.outputs.pull_request_url }}
+      source_branch: ${{ github.ref_name }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v1
+      - name: Generate PR description
+        id: generate_pr_description
+        run: |
+          PR_DESCRIPTION=$(git log origin/${{inputs.pr_branch}}..origin/${GITHUB_REF_NAME} --no-merges --no-decorate)
+          PR_DESCRIPTION="${PR_DESCRIPTION//'%'/'%25'}"
+          PR_DESCRIPTION="${PR_DESCRIPTION//$'\n'/'%0A'}"
+          PR_DESCRIPTION="${PR_DESCRIPTION//$'\r'/'%0D'}"
+          echo ::set-output name=pr_description::"$PR_DESCRIPTION"
+      - name: Create & update PR
+        id: create-update-pr
+        uses: vsoch/pull-request-action@1.0.18
+        env:
+          GITHUB_TOKEN: ${{secrets.git_token}}
+          PASS_ON_ERROR: true
+          PULL_REQUEST_UPDATE: true 
+          PULL_REQUEST_DRAFT: false
+          PULL_REQUEST_ASSIGNEES: ${{ github.actor }}
+          PULL_REQUEST_TEAM_REVIEWERS: ${{ inputs.review_team }}
+          PULL_REQUEST_BRANCH: ${{inputs.pr_branch}}
+          PULL_REQUEST_FROM_BRANCH: ${{ github.ref_name }}
+          PULL_REQUEST_TITLE: Merge ${{ github.ref_name }} into ${{inputs.pr_branch}}
+          PULL_REQUEST_BODY:  ${{ steps.generate_pr_description.outputs.pr_description }}
+
+      - name: Test outputs
+        env:
+          pull_request_number_output: ${{ steps.create-pr.outputs.pull_request_number }}
+          pull_request_url_output: ${{ steps.create-pr.outputs.pull_request_url }}
+        run: |
+          echo "Pull request number from output: ${pull_request_number_output}"
+          echo "Pull request url from output: ${pull_request_url_output}"
+          echo "Pull request number from environment: ${PULL_REQUEST_NUMBER}"
+          echo "Pull request url from environment: ${PULL_REQUEST_URL}"
